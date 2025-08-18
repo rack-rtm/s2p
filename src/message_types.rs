@@ -2,19 +2,12 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HandshakeRequest {
-    pub protocol: Protocol,
     pub target: TargetAddress,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HandshakeResponse {
     pub status: StatusCode,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Protocol {
-    Tcp = 0,
-    Udp = 1,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,8 +33,7 @@ pub enum StatusCode {
     HostUnreachable = 0x04,
     ConnectionRefused = 0x05,
     TTLExpired = 0x06,
-    CommandNotSupported = 0x07,
-    AddressTypeNotSupported = 0x08,
+    AddressTypeNotSupported = 0x07,
 }
 
 impl HandshakeResponse {

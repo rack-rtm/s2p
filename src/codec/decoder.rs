@@ -1,7 +1,7 @@
 use crate::codec::types::CodecError::InvalidStatusCode;
 use crate::codec::types::{CodecError, HandshakeRequestCodec, HandshakeResponseCodec};
 use crate::message_types::{
-    Address, HandshakeRequest, HandshakeResponse, Protocol, StatusCode, TargetAddress,
+    Address, HandshakeRequest, HandshakeResponse, StatusCode, TargetAddress,
 };
 use bytes::{Buf, BytesMut};
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -16,9 +16,7 @@ impl Decoder for HandshakeRequestCodec {
             return Ok(None);
         }
 
-        let header = src[0];
-        let protocol = Self::parse_protocol(header)?;
-        let atyp = Self::parse_address_type(header)?;
+        let atyp = Self::parse_address_type(src[0])?;
 
         let required_len = Self::calculate_required_length(src, atyp)?;
         if src.len() < required_len {
@@ -32,7 +30,6 @@ impl Decoder for HandshakeRequestCodec {
         let port = data.get_u16();
 
         Ok(Some(HandshakeRequest {
-            protocol,
             target: TargetAddress { address, port },
         }))
     }
@@ -57,16 +54,8 @@ impl Decoder for HandshakeResponseCodec {
 }
 
 impl HandshakeRequestCodec {
-    fn parse_protocol(header: u8) -> Result<Protocol, CodecError> {
-        match (header >> 7) & 0x01 {
-            0 => Ok(Protocol::Tcp),
-            1 => Ok(Protocol::Udp),
-            _ => unreachable!(),
-        }
-    }
-
     fn parse_address_type(header: u8) -> Result<u8, CodecError> {
-        let atyp = (header >> 5) & 0x03;
+        let atyp = header & 0b11;
         match atyp {
             0..=2 => Ok(atyp),
             _ => Err(CodecError::InvalidAddressType(atyp)),
@@ -125,8 +114,7 @@ impl TryFrom<u8> for StatusCode {
             0x04 => Ok(StatusCode::HostUnreachable),
             0x05 => Ok(StatusCode::ConnectionRefused),
             0x06 => Ok(StatusCode::TTLExpired),
-            0x07 => Ok(StatusCode::CommandNotSupported),
-            0x08 => Ok(StatusCode::AddressTypeNotSupported),
+            0x07 => Ok(StatusCode::AddressTypeNotSupported),
             _ => Err(InvalidStatusCode(value)),
         }
     }

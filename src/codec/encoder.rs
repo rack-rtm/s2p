@@ -1,5 +1,5 @@
 use crate::codec::types::{CodecError, HandshakeRequestCodec, HandshakeResponseCodec};
-use crate::message_types::{Address, HandshakeRequest, HandshakeResponse, Protocol};
+use crate::message_types::{Address, HandshakeRequest, HandshakeResponse};
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::Encoder;
 
@@ -7,19 +7,13 @@ impl Encoder<HandshakeRequest> for HandshakeRequestCodec {
     type Error = CodecError;
 
     fn encode(&mut self, req: HandshakeRequest, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let protocol_bit = match req.protocol {
-            Protocol::Tcp => 0u8,
-            Protocol::Udp => 1u8,
-        };
-
         let SerializedAddress {
             atyp,
             domain_length,
             address,
         } = Self::serialize_address(&req.target.address)?;
 
-        let first_byte = (protocol_bit << 7) | (atyp << 5);
-        dst.put_u8(first_byte);
+        dst.put_u8(atyp);
 
         if let Some(domain_length) = domain_length {
             dst.put_u8(domain_length);

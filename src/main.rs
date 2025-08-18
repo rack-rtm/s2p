@@ -1,6 +1,6 @@
 use crate::codec::{HandshakeRequestCodec, HandshakeResponseCodec};
 use crate::iroh::{ALPN_S2P_V1, S2pProtocol};
-use crate::message_types::{Address, HandshakeRequest, Protocol, TargetAddress};
+use crate::message_types::{Address, HandshakeRequest, TargetAddress};
 use ::iroh::Endpoint;
 use ::iroh::protocol::Router;
 use n0_future::{SinkExt, StreamExt};
@@ -9,13 +9,14 @@ use std::thread::sleep;
 use std::time::Duration;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
+mod iroh_stream;
 mod codec;
 mod iroh;
 mod message_types;
-mod async_stream;
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     let client_endp = Endpoint::builder().discovery_n0().bind().await.unwrap();
     let server_endp = Endpoint::builder().discovery_n0().bind().await.unwrap();
 
@@ -25,7 +26,7 @@ async fn main() {
         .accept(ALPN_S2P_V1, S2pProtocol)
         .spawn();
 
-    sleep(Duration::from_secs(1));
+    sleep(Duration::from_secs(2));
 
     let connection = client_endp
         .connect(server_node_id, ALPN_S2P_V1.as_ref())
@@ -36,7 +37,6 @@ async fn main() {
     let mut framed_writer = FramedWrite::new(writer, HandshakeRequestCodec);
     framed_writer
         .send(HandshakeRequest {
-            protocol: Protocol::Tcp,
             target: TargetAddress {
                 address: Address::IPv4(Ipv4Addr::new(127, 0, 0, 1)),
                 port: 1234,
@@ -47,11 +47,13 @@ async fn main() {
 
     let mut framed_reader = FramedRead::new(reader, HandshakeResponseCodec);
     let option = framed_reader.next().await;
-    println!("{:?}", option);
+    println!("Got response kek {:?}", option);
 
     let mut writer = framed_writer.into_inner();
 
+    println!("Writing hello");
     writer.write(b"hello").await.unwrap();
+    println!("Wrote hello");
     sleep(Duration::from_secs(1));
     let result = writer.write(b"world").await;
     println!("{:?}", result);
