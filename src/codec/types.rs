@@ -1,8 +1,11 @@
 #[derive(Debug, Default)]
-pub struct HandshakeRequestCodec;
+pub struct UdpDatagramCodec;
 
 #[derive(Debug, Default)]
-pub struct HandshakeResponseCodec;
+pub struct TcpConnectRequestCodec;
+
+#[derive(Debug, Default)]
+pub struct TcpConnectResponseCodec;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodecError {

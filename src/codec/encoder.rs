@@ -1,17 +1,46 @@
-use crate::codec::types::{CodecError, HandshakeRequestCodec, HandshakeResponseCodec};
-use crate::message_types::{Address, HandshakeRequest, HandshakeResponse};
+use crate::codec::types::{
+    CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec, UdpDatagramCodec,
+};
+use crate::message_types::{
+    Host, HandshakeRequest, HandshakeResponse, TcpConnectRequest, TcpConnectResponse,
+    UdpDatagram,
+};
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::Encoder;
-
-impl Encoder<HandshakeRequest> for HandshakeRequestCodec {
+impl Encoder<UdpDatagram> for UdpDatagramCodec {
     type Error = CodecError;
 
-    fn encode(&mut self, req: HandshakeRequest, dst: &mut BytesMut) -> Result<(), Self::Error> {
+    fn encode(&mut self, datagram: UdpDatagram, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let SerializedAddress {
             atyp,
             domain_length,
             address,
-        } = Self::serialize_address(&req.target.address)?;
+        } = SerializedAddress::from_address(&datagram.target.host)?;
+
+        dst.put_u8(datagram.flow_id);
+        dst.put_u8(atyp);
+
+        if let Some(domain_length) = domain_length {
+            dst.put_u8(domain_length);
+        }
+
+        dst.put_slice(address.as_slice());
+        dst.put_u16(datagram.target.port);
+        dst.put_slice(&datagram.data);
+
+        Ok(())
+    }
+}
+
+impl Encoder<TcpConnectRequest> for TcpConnectRequestCodec {
+    type Error = CodecError;
+
+    fn encode(&mut self, req: TcpConnectRequest, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let SerializedAddress {
+            atyp,
+            domain_length,
+            address,
+        } = SerializedAddress::from_address(&req.target.host)?;
 
         dst.put_u8(atyp);
 
@@ -26,7 +55,39 @@ impl Encoder<HandshakeRequest> for HandshakeRequestCodec {
     }
 }
 
-impl Encoder<HandshakeResponse> for HandshakeResponseCodec {
+impl Encoder<TcpConnectResponse> for TcpConnectResponseCodec {
+    type Error = CodecError;
+
+    fn encode(&mut self, resp: TcpConnectResponse, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        dst.put_u8(resp.status as u8);
+        Ok(())
+    }
+}
+
+impl Encoder<HandshakeRequest> for TcpConnectRequestCodec {
+    type Error = CodecError;
+
+    fn encode(&mut self, req: HandshakeRequest, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let SerializedAddress {
+            atyp,
+            domain_length,
+            address,
+        } = SerializedAddress::from_address(&req.target.host)?;
+
+        dst.put_u8(atyp);
+
+        if let Some(domain_length) = domain_length {
+            dst.put_u8(domain_length);
+        }
+
+        dst.put_slice(address.as_slice());
+        dst.put_u16(req.target.port);
+
+        Ok(())
+    }
+}
+
+impl Encoder<HandshakeResponse> for TcpConnectResponseCodec {
     type Error = CodecError;
 
     fn encode(&mut self, resp: HandshakeResponse, dst: &mut BytesMut) -> Result<(), Self::Error> {
@@ -51,19 +112,19 @@ impl SerializedAddress {
     }
 }
 
-impl HandshakeRequestCodec {
-    fn serialize_address(address: &Address) -> Result<SerializedAddress, CodecError> {
-        let (at, domain_length, address) = match address {
-            Address::IPv4(ip) => (0u8, None, ip.octets().to_vec()),
-            Address::IPv6(ip) => (1u8, None, ip.octets().to_vec()),
-            Address::Domain(domain) => {
+impl SerializedAddress {
+    fn from_address(address: &Host) -> Result<SerializedAddress, CodecError> {
+        let (atyp, domain_length, address) = match address {
+            Host::IPv4(ip) => (0u8, None, ip.octets().to_vec()),
+            Host::IPv6(ip) => (1u8, None, ip.octets().to_vec()),
+            Host::Domain(domain) => {
                 if domain.len() > 255 {
                     return Err(CodecError::DomainTooLong(domain.len()));
                 }
-                (2u8, None, domain.as_bytes().to_vec())
+                (2u8, Some(domain.len() as u8), domain.as_bytes().to_vec())
             }
         };
 
-        Ok(SerializedAddress::new(at, domain_length, address))
+        Ok(SerializedAddress::new(atyp, domain_length, address))
     }
 }
