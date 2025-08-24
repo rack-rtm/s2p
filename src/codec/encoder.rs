@@ -2,7 +2,7 @@ use crate::codec::types::{
     CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec, UdpDatagramCodec,
 };
 use crate::message_types::{
-    Host, HandshakeRequest, HandshakeResponse, TcpConnectRequest, TcpConnectResponse,
+    Host, TcpConnectRequest, TcpConnectResponse,
     UdpDatagram,
 };
 use bytes::{BufMut, BytesMut};
@@ -59,38 +59,6 @@ impl Encoder<TcpConnectResponse> for TcpConnectResponseCodec {
     type Error = CodecError;
 
     fn encode(&mut self, resp: TcpConnectResponse, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.put_u8(resp.status as u8);
-        Ok(())
-    }
-}
-
-impl Encoder<HandshakeRequest> for TcpConnectRequestCodec {
-    type Error = CodecError;
-
-    fn encode(&mut self, req: HandshakeRequest, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let SerializedAddress {
-            atyp,
-            domain_length,
-            address,
-        } = SerializedAddress::from_address(&req.target.host)?;
-
-        dst.put_u8(atyp);
-
-        if let Some(domain_length) = domain_length {
-            dst.put_u8(domain_length);
-        }
-
-        dst.put_slice(address.as_slice());
-        dst.put_u16(req.target.port);
-
-        Ok(())
-    }
-}
-
-impl Encoder<HandshakeResponse> for TcpConnectResponseCodec {
-    type Error = CodecError;
-
-    fn encode(&mut self, resp: HandshakeResponse, dst: &mut BytesMut) -> Result<(), Self::Error> {
         dst.put_u8(resp.status as u8);
         Ok(())
     }

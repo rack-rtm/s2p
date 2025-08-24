@@ -3,7 +3,6 @@ use crate::iroh::types::S2pProtocol;
 use crate::iroh::udp_handler::UdpProxyHandlerHandler;
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler};
-use n0_future::StreamExt;
 
 impl ProtocolHandler for S2pProtocol {
     fn accept(
@@ -16,7 +15,7 @@ impl ProtocolHandler for S2pProtocol {
             let bi_stream_task = tokio::spawn(async move {
                 while let Ok((writer, reader)) = connection.accept_bi().await {
                     tokio::spawn(async move {
-                        TcpProxyHandlerHandler {}
+                        TcpProxyHandlerHandler::new()
                             .handle_stream(writer, reader)
                             .await;
                     });

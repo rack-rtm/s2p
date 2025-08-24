@@ -14,20 +14,7 @@ pub struct TcpConnectRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpConnectResponse {
-    pub status: ConnectStatus,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum ConnectStatus {
-    Success = 0x00,
-    GeneralFailure = 0x01,
-    ConnectionNotAllowed = 0x02,
-    NetworkUnreachable = 0x03,
-    HostUnreachable = 0x04,
-    ConnectionRefused = 0x05,
-    TTLExpired = 0x06,
-    AddressTypeNotSupported = 0x07,
+    pub status: ConnectStatusCode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,26 +35,9 @@ pub struct HandshakeRequest {
     pub target: TargetAddress,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HandshakeResponse {
-    pub status: StatusCode,
-}
-
-impl HandshakeResponse {
-    pub fn new(status: StatusCode) -> Self {
-        Self { status }
-    }
-
-    pub fn success() -> Self {
-        Self {
-            status: StatusCode::Success,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum StatusCode {
+pub enum ConnectStatusCode {
     Success = 0x00,
     GeneralFailure = 0x01,
     ConnectionNotAllowed = 0x02,
@@ -76,4 +46,16 @@ pub enum StatusCode {
     ConnectionRefused = 0x05,
     TTLExpired = 0x06,
     AddressTypeNotSupported = 0x07,
+}
+
+impl TcpConnectResponse {
+    pub fn new(status: ConnectStatusCode) -> Self {
+        Self { status }
+    }
+
+    pub fn success() -> Self {
+        Self {
+            status: ConnectStatusCode::Success,
+        }
+    }
 }

@@ -5,8 +5,8 @@ pub mod message_types;
 
 // Re-export commonly used items for convenience
 pub use codec::{CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec, UdpDatagramCodec};
-pub use iroh::{ALPN_S2P_V1, S2pProtocol};
+pub use iroh::{S2pProtocol, ALPN_S2P_V1};
 pub use message_types::{
-    ConnectStatus, HandshakeRequest, HandshakeResponse, Host, StatusCode, TargetAddress,
-    TcpConnectRequest, TcpConnectResponse, UdpDatagram,
+    ConnectStatusCode, Host, TargetAddress, TcpConnectRequest, TcpConnectResponse,
+    UdpDatagram,
 };

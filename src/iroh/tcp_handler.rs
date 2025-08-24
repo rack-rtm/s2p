@@ -1,6 +1,6 @@
 use crate::codec::{CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec};
 use crate::iroh_stream::IrohStream;
-use crate::message_types::{HandshakeRequest, HandshakeResponse, Host, StatusCode};
+use crate::message_types::{ConnectStatusCode, Host, TcpConnectRequest, TcpConnectResponse};
 use iroh::endpoint::{RecvStream, SendStream};
 use n0_future::SinkExt;
 use std::io;
@@ -17,6 +17,10 @@ use tracing::{error, info};
 pub struct TcpProxyHandlerHandler {}
 
 impl TcpProxyHandlerHandler {
+
+    pub fn new() -> Self {
+        Self {}
+    }
     pub async fn handle_stream(&self, writer: SendStream, reader: RecvStream) {
         let mut framed_writer = FramedWrite::new(writer, TcpConnectResponseCodec);
         let mut framed_reader = FramedRead::new(reader, TcpConnectRequestCodec);
@@ -29,7 +33,7 @@ impl TcpProxyHandlerHandler {
             }
             Err(StreamError::ProtocolError(status_code)) => {
                 error!("Protocol error during handshake: {:?}", status_code);
-                let response = HandshakeResponse {
+                let response = TcpConnectResponse {
                     status: status_code,
                 };
                 if let Err(e) = framed_writer.send(response).await {
@@ -48,14 +52,14 @@ impl TcpProxyHandlerHandler {
                 }
                 Err(StreamError::ProtocolError(status_code)) => {
                     error!("Protocol error establishing connection: {:?}", status_code);
-                    let response = HandshakeResponse::new(status_code);
+                    let response = TcpConnectResponse::new(status_code);
                     if let Err(e) = framed_writer.send(response).await {
                         error!("Failed to send error response: {:?}", e);
                     }
                     return;
                 }
             };
-        let _ = framed_writer.send(HandshakeResponse::success()).await;
+        let _ = framed_writer.send(TcpConnectResponse::success()).await;
 
         let mut iroh_stream =
             IrohStream::new(framed_reader.into_inner(), framed_writer.into_inner());
@@ -66,7 +70,7 @@ impl TcpProxyHandlerHandler {
     }
 
     async fn establish_connection_to_target(
-        handshake_request: HandshakeRequest,
+        handshake_request: TcpConnectRequest,
     ) -> Result<TcpStream, StreamError> {
         let target_address = handshake_request.target;
 
@@ -74,16 +78,16 @@ impl TcpProxyHandlerHandler {
 
         let tcp_stream = timeout(Duration::from_secs(10), TcpStream::connect(socket_addr))
             .await
-            .map_err(|_| StreamError::ProtocolError(StatusCode::TTLExpired))?
+            .map_err(|_| StreamError::ProtocolError(ConnectStatusCode::TTLExpired))?
             .map_err(|e| match e.kind() {
                 ErrorKind::ConnectionRefused => {
-                    StreamError::ProtocolError(StatusCode::ConnectionRefused)
+                    StreamError::ProtocolError(ConnectStatusCode::ConnectionRefused)
                 }
-                ErrorKind::TimedOut => StreamError::ProtocolError(StatusCode::TTLExpired),
+                ErrorKind::TimedOut => StreamError::ProtocolError(ConnectStatusCode::TTLExpired),
                 ErrorKind::NotFound | ErrorKind::AddrNotAvailable => {
-                    StreamError::ProtocolError(StatusCode::HostUnreachable)
+                    StreamError::ProtocolError(ConnectStatusCode::HostUnreachable)
                 }
-                _ => StreamError::ProtocolError(StatusCode::GeneralFailure),
+                _ => StreamError::ProtocolError(ConnectStatusCode::GeneralFailure),
             })?;
 
         Ok(tcp_stream)
@@ -110,16 +114,22 @@ impl TcpProxyHandlerHandler {
                         }
                         None => {
                             error!("DNS resolution for {} returned no results", domain);
-                            Err(StreamError::ProtocolError(StatusCode::HostUnreachable))
+                            Err(StreamError::ProtocolError(
+                                ConnectStatusCode::HostUnreachable,
+                            ))
                         }
                     },
                     Ok(Err(e)) => {
                         error!("DNS resolution failed for {}: {}", domain, e);
-                        Err(StreamError::ProtocolError(StatusCode::HostUnreachable))
+                        Err(StreamError::ProtocolError(
+                            ConnectStatusCode::HostUnreachable,
+                        ))
                     }
                     Err(_) => {
                         error!("DNS resolution for {} timed out", domain);
-                        Err(StreamError::ProtocolError(StatusCode::HostUnreachable))
+                        Err(StreamError::ProtocolError(
+                            ConnectStatusCode::HostUnreachable,
+                        ))
                     }
                 }
             }
@@ -128,7 +138,7 @@ impl TcpProxyHandlerHandler {
 
     async fn read_handshake_request(
         framed_reader: &mut FramedRead<RecvStream, TcpConnectRequestCodec>,
-    ) -> Result<HandshakeRequest, StreamError> {
+    ) -> Result<TcpConnectRequest, StreamError> {
         match timeout(Duration::from_secs(30), framed_reader.next()).await {
             Ok(Some(Ok(handshake_request))) => {
                 info!("Successfully read handshake request");
@@ -140,7 +150,9 @@ impl TcpProxyHandlerHandler {
             }
             Ok(Some(Err(codec_error))) => {
                 error!("Codec error reading handshake: {:?}", codec_error);
-                Err(StreamError::ProtocolError(StatusCode::from(codec_error)))
+                Err(StreamError::ProtocolError(ConnectStatusCode::from(
+                    codec_error,
+                )))
             }
             Ok(None) => {
                 error!("Stream ended during handshake");
@@ -163,16 +175,16 @@ impl TcpProxyHandlerHandler {
 #[derive(Debug)]
 enum StreamError {
     IoError(io::Error),
-    ProtocolError(StatusCode),
+    ProtocolError(ConnectStatusCode),
 }
 
-impl From<CodecError> for StatusCode {
+impl From<CodecError> for ConnectStatusCode {
     fn from(value: CodecError) -> Self {
         match value {
-            CodecError::DomainTooLong(_) => StatusCode::HostUnreachable,
-            CodecError::InvalidDomainEncoding => StatusCode::HostUnreachable,
-            CodecError::InvalidAddressType(_) => StatusCode::AddressTypeNotSupported,
-            _ => StatusCode::GeneralFailure,
+            CodecError::DomainTooLong(_) => ConnectStatusCode::HostUnreachable,
+            CodecError::InvalidDomainEncoding => ConnectStatusCode::HostUnreachable,
+            CodecError::InvalidAddressType(_) => ConnectStatusCode::AddressTypeNotSupported,
+            _ => ConnectStatusCode::GeneralFailure,
         }
     }
 }

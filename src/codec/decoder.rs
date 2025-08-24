@@ -3,15 +3,16 @@ use crate::codec::types::{
     CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec, UdpDatagramCodec,
 };
 use crate::message_types::{
-    Host, ConnectStatus, HandshakeRequest, HandshakeResponse, StatusCode, TargetAddress,
+    ConnectStatusCode, Host, TargetAddress,
     TcpConnectResponse, UdpDatagram,
 };
+use crate::TcpConnectRequest;
 use bytes::{Buf, BytesMut};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use tokio_util::codec::Decoder;
 
 impl Decoder for TcpConnectRequestCodec {
-    type Item = HandshakeRequest;
+    type Item = TcpConnectRequest;
     type Error = CodecError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -32,7 +33,7 @@ impl Decoder for TcpConnectRequestCodec {
         let address = Self::parse_address(&mut data, atyp)?;
         let port = data.get_u16();
 
-        Ok(Some(HandshakeRequest {
+        Ok(Some(TcpConnectRequest {
             target: TargetAddress { host: address, port },
         }))
     }
@@ -187,7 +188,7 @@ impl Decoder for TcpConnectResponseCodec {
         }
 
         let status_byte = src[0];
-        let status = ConnectStatus::try_from(status_byte)?;
+        let status = ConnectStatusCode::try_from(status_byte)?;
 
         src.advance(1);
 
@@ -195,37 +196,19 @@ impl Decoder for TcpConnectResponseCodec {
     }
 }
 
-impl TryFrom<u8> for StatusCode {
+impl TryFrom<u8> for ConnectStatusCode {
     type Error = CodecError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0x00 => Ok(StatusCode::Success),
-            0x01 => Ok(StatusCode::GeneralFailure),
-            0x02 => Ok(StatusCode::ConnectionNotAllowed),
-            0x03 => Ok(StatusCode::NetworkUnreachable),
-            0x04 => Ok(StatusCode::HostUnreachable),
-            0x05 => Ok(StatusCode::ConnectionRefused),
-            0x06 => Ok(StatusCode::TTLExpired),
-            0x07 => Ok(StatusCode::AddressTypeNotSupported),
-            _ => Err(InvalidStatusCode(value)),
-        }
-    }
-}
-
-impl TryFrom<u8> for ConnectStatus {
-    type Error = CodecError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0x00 => Ok(ConnectStatus::Success),
-            0x01 => Ok(ConnectStatus::GeneralFailure),
-            0x02 => Ok(ConnectStatus::ConnectionNotAllowed),
-            0x03 => Ok(ConnectStatus::NetworkUnreachable),
-            0x04 => Ok(ConnectStatus::HostUnreachable),
-            0x05 => Ok(ConnectStatus::ConnectionRefused),
-            0x06 => Ok(ConnectStatus::TTLExpired),
-            0x07 => Ok(ConnectStatus::AddressTypeNotSupported),
+            0x00 => Ok(ConnectStatusCode::Success),
+            0x01 => Ok(ConnectStatusCode::GeneralFailure),
+            0x02 => Ok(ConnectStatusCode::ConnectionNotAllowed),
+            0x03 => Ok(ConnectStatusCode::NetworkUnreachable),
+            0x04 => Ok(ConnectStatusCode::HostUnreachable),
+            0x05 => Ok(ConnectStatusCode::ConnectionRefused),
+            0x06 => Ok(ConnectStatusCode::TTLExpired),
+            0x07 => Ok(ConnectStatusCode::AddressTypeNotSupported),
             _ => Err(InvalidStatusCode(value)),
         }
     }

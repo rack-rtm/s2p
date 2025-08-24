@@ -1,5 +1,5 @@
 use crate::codec::{CodecError, UdpDatagramCodec};
-use crate::message_types::{Host, StatusCode, UdpDatagram};
+use crate::message_types::{Host, ConnectStatusCode, UdpDatagram};
 use bytes::{Bytes, BytesMut};
 use iroh::endpoint::Connection;
 use std::collections::HashMap;
@@ -93,7 +93,7 @@ impl UdpProxyHandlerHandler {
 
         match codec.decode(&mut buf) {
             Ok(Some(udp_datagram)) => Ok(udp_datagram),
-            Ok(None) => Err(UdpError::ProtocolError(StatusCode::GeneralFailure)),
+            Ok(None) => Err(UdpError::ProtocolError(ConnectStatusCode::GeneralFailure)),
             Err(e) => Err(UdpError::CodecError(e)),
         }
     }
@@ -193,16 +193,16 @@ impl UdpProxyHandlerHandler {
                         }
                         None => {
                             error!("DNS resolution for {} returned no results", domain);
-                            Err(UdpError::ProtocolError(StatusCode::HostUnreachable))
+                            Err(UdpError::ProtocolError(ConnectStatusCode::HostUnreachable))
                         }
                     },
                     Ok(Err(e)) => {
                         error!("DNS resolution failed for {}: {}", domain, e);
-                        Err(UdpError::ProtocolError(StatusCode::HostUnreachable))
+                        Err(UdpError::ProtocolError(ConnectStatusCode::HostUnreachable))
                     }
                     Err(_) => {
                         error!("DNS resolution for {} timed out", domain);
-                        Err(UdpError::ProtocolError(StatusCode::HostUnreachable))
+                        Err(UdpError::ProtocolError(ConnectStatusCode::HostUnreachable))
                     }
                 }
             }
@@ -213,6 +213,6 @@ impl UdpProxyHandlerHandler {
 #[derive(Debug)]
 enum UdpError {
     IoError(io::Error),
-    ProtocolError(StatusCode),
+    ProtocolError(ConnectStatusCode),
     CodecError(CodecError),
 }
