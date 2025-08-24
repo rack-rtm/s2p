@@ -1,3 +1,5 @@
 /target
-.idea
+
+# IntelliJ IDEA
+.idea/
 *.iml
