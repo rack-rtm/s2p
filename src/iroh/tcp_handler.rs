@@ -172,7 +172,7 @@ impl From<CodecError> for StatusCode {
             CodecError::DomainTooLong(_) => StatusCode::HostUnreachable,
             CodecError::InvalidDomainEncoding => StatusCode::HostUnreachable,
             CodecError::InvalidAddressType(_) => StatusCode::AddressTypeNotSupported,
-            _ => unreachable!(),
+            _ => StatusCode::GeneralFailure,
         }
     }
 }

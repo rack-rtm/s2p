@@ -1,6 +1,6 @@
 use crate::iroh::tcp_handler::TcpProxyHandlerHandler;
 use crate::iroh::types::S2pProtocol;
-use bytes::Bytes;
+use crate::iroh::udp_handler::UdpProxyHandlerHandler;
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler};
 use n0_future::StreamExt;
@@ -24,8 +24,12 @@ impl ProtocolHandler for S2pProtocol {
             });
 
             let datagram_task = tokio::spawn(async move {
-                let result = connection_clone.read_datagram().await;
-                while let _ = connection_clone.read_datagram().await {}
+                let udp_handler = UdpProxyHandlerHandler::new();
+                while let Ok(datagram) = connection_clone.read_datagram().await {
+                    udp_handler
+                        .handle_datagram(&connection_clone, datagram)
+                        .await;
+                }
             });
 
             // Wait for either task to complete (they run concurrently)
@@ -36,13 +40,5 @@ impl ProtocolHandler for S2pProtocol {
 
             Ok(())
         })
-    }
-}
-
-impl S2pProtocol {
-    async fn handle_datagram(datagram: Bytes) {
-        // TODO: Implement datagram protocol handling
-        // This could be UDP proxy functionality similar to SOCKS5 UDP
-        println!("Received datagram of {} bytes", datagram.len());
     }
 }
