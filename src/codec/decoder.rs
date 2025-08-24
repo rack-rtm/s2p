@@ -1,12 +1,11 @@
+use crate::TcpConnectRequest;
 use crate::codec::types::CodecError::InvalidStatusCode;
 use crate::codec::types::{
     CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec, UdpDatagramCodec,
 };
 use crate::message_types::{
-    ConnectStatusCode, Host, TargetAddress,
-    TcpConnectResponse, UdpDatagram,
+    ConnectStatusCode, Host, TargetAddress, TcpConnectResponse, UdpDatagram,
 };
-use crate::TcpConnectRequest;
 use bytes::{Buf, BytesMut};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use tokio_util::codec::Decoder;
@@ -34,7 +33,10 @@ impl Decoder for TcpConnectRequestCodec {
         let port = data.get_u16();
 
         Ok(Some(TcpConnectRequest {
-            target: TargetAddress { host: address, port },
+            target: TargetAddress {
+                host: address,
+                port,
+            },
         }))
     }
 }
@@ -65,7 +67,10 @@ impl Decoder for UdpDatagramCodec {
 
         Ok(Some(UdpDatagram {
             flow_id,
-            target: TargetAddress { host: address, port },
+            target: TargetAddress {
+                host: address,
+                port,
+            },
             data: remaining_data,
         }))
     }

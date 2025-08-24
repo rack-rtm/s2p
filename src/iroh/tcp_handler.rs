@@ -14,18 +14,43 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, info};
 
-pub struct TcpProxyHandlerHandler {}
+#[derive(Clone)]
+pub struct TcpProxyTimeouts {
+    pub connection_timeout: Duration,
+    pub dns_resolution_timeout: Duration,
+    pub handshake_timeout: Duration,
+}
+
+impl Default for TcpProxyTimeouts {
+    fn default() -> Self {
+        Self {
+            connection_timeout: Duration::from_secs(10),
+            dns_resolution_timeout: Duration::from_secs(5),
+            handshake_timeout: Duration::from_secs(30),
+        }
+    }
+}
+
+pub struct TcpProxyHandlerHandler {
+    timeouts: TcpProxyTimeouts,
+}
 
 impl TcpProxyHandlerHandler {
 
     pub fn new() -> Self {
-        Self {}
+        Self {
+            timeouts: TcpProxyTimeouts::default(),
+        }
+    }
+
+    pub fn with_timeouts(timeouts: TcpProxyTimeouts) -> Self {
+        Self { timeouts }
     }
     pub async fn handle_stream(&self, writer: SendStream, reader: RecvStream) {
         let mut framed_writer = FramedWrite::new(writer, TcpConnectResponseCodec);
         let mut framed_reader = FramedRead::new(reader, TcpConnectRequestCodec);
 
-        let handshake_request = match Self::read_handshake_request(&mut framed_reader).await {
+        let handshake_request = match self.read_handshake_request(&mut framed_reader).await {
             Ok(request) => request,
             Err(StreamError::IoError(error)) => {
                 error!("Stream IO error during handshake: {:?}", error);
@@ -44,7 +69,7 @@ impl TcpProxyHandlerHandler {
         };
 
         let mut target_stream =
-            match Self::establish_connection_to_target(handshake_request.clone()).await {
+            match self.establish_connection_to_target(handshake_request.clone()).await {
                 Ok(stream) => stream,
                 Err(StreamError::IoError(error)) => {
                     error!("Stream IO error establishing connection: {:?}", error);
@@ -70,13 +95,14 @@ impl TcpProxyHandlerHandler {
     }
 
     async fn establish_connection_to_target(
+        &self,
         handshake_request: TcpConnectRequest,
     ) -> Result<TcpStream, StreamError> {
         let target_address = handshake_request.target;
 
-        let socket_addr = Self::resolve_address(&target_address.host, target_address.port).await?;
+        let socket_addr = self.resolve_address(&target_address.host, target_address.port).await?;
 
-        let tcp_stream = timeout(Duration::from_secs(10), TcpStream::connect(socket_addr))
+        let tcp_stream = timeout(self.timeouts.connection_timeout, TcpStream::connect(socket_addr))
             .await
             .map_err(|_| StreamError::ProtocolError(ConnectStatusCode::TTLExpired))?
             .map_err(|e| match e.kind() {
@@ -93,7 +119,7 @@ impl TcpProxyHandlerHandler {
         Ok(tcp_stream)
     }
 
-    async fn resolve_address(address: &Host, port: u16) -> Result<SocketAddr, StreamError> {
+    async fn resolve_address(&self, address: &Host, port: u16) -> Result<SocketAddr, StreamError> {
         match address {
             Host::IPv4(ip) => {
                 info!("Using IPv4 address: {}:{}", ip, port);
@@ -106,7 +132,7 @@ impl TcpProxyHandlerHandler {
             Host::Domain(domain) => {
                 info!("Resolving domain: {}:{}", domain, port);
                 let addr = format!("{}:{}", domain, port);
-                match timeout(Duration::from_secs(5), tokio::net::lookup_host(&addr)).await {
+                match timeout(self.timeouts.dns_resolution_timeout, tokio::net::lookup_host(&addr)).await {
                     Ok(Ok(mut addrs)) => match addrs.next() {
                         Some(resolved) => {
                             info!("Domain {} resolved to {}", domain, resolved);
@@ -137,9 +163,10 @@ impl TcpProxyHandlerHandler {
     }
 
     async fn read_handshake_request(
+        &self,
         framed_reader: &mut FramedRead<RecvStream, TcpConnectRequestCodec>,
     ) -> Result<TcpConnectRequest, StreamError> {
-        match timeout(Duration::from_secs(30), framed_reader.next()).await {
+        match timeout(self.timeouts.handshake_timeout, framed_reader.next()).await {
             Ok(Some(Ok(handshake_request))) => {
                 info!("Successfully read handshake request");
                 Ok(handshake_request)
