@@ -3,6 +3,10 @@ name = "s2p"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "s2p"
+path = "src/lib.rs"
+
 [dependencies]
 thiserror = "2.0.15"
 tokio = { version = "1.47.1", features = ["full"] }

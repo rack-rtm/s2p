@@ -1,5 +1,4 @@
 mod types;
-mod client;
 mod handler;
 mod tcp_handler;
 mod udp_handler;

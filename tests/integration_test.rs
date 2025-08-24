@@ -1,6 +1,6 @@
-use crate::codec::{TcpConnectRequestCodec, TcpConnectResponseCodec};
-use crate::iroh::{ALPN_S2P_V1, S2pProtocol};
-use crate::message_types::{HandshakeRequest, Host, TargetAddress};
+use s2p::codec::{TcpConnectRequestCodec, TcpConnectResponseCodec};
+use s2p::iroh::{ALPN_S2P_V1, S2pProtocol};
+use s2p::message_types::{HandshakeRequest, Host, TargetAddress};
 use ::iroh::Endpoint;
 use ::iroh::endpoint::TransportConfig;
 use ::iroh::protocol::Router;
@@ -10,13 +10,8 @@ use std::thread::sleep;
 use std::time::Duration;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
-mod codec;
-mod iroh;
-mod iroh_stream;
-mod message_types;
-
-#[tokio::main]
-async fn main() {
+#[tokio::test]
+async fn test_s2p_protocol() {
     env_logger::init();
     let client_endp = Endpoint::builder()
         .transport_config(TransportConfig::default())
