@@ -3,6 +3,7 @@ use iroh::RelayMode::Custom;
 use iroh::{RelayMap, RelayNode, SecretKey};
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::time::Duration;
+use iroh::endpoint::{TransportConfig, VarInt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tracing::{error, info};
@@ -32,15 +33,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn create_300mbps_config() -> TransportConfig {
+    // 300 Mbps = 37,500,000 bytes/s
+    const TARGET_BANDWIDTH: u32 = 37_500_000; // 300 Mbps in bytes/s
+    const EXPECTED_RTT: u32 = 100; // ms
+
+    // Calculate stream window: bandwidth * RTT
+    // 37,500,000 bytes/s * 0.1s = 3,750,000 bytes
+    const STREAM_WINDOW: u32 = TARGET_BANDWIDTH / 1000 * EXPECTED_RTT;
+
+    let mut config = TransportConfig::default();
+
+    config
+        // Set stream receive window for 300 Mbps throughput
+        .stream_receive_window(VarInt::from_u32(STREAM_WINDOW))
+        // Connection-level window (larger than stream window)
+        .receive_window(VarInt::from_u32(STREAM_WINDOW * 2))
+        // Send window should be generous for high throughput
+        .send_window((STREAM_WINDOW * 8) as u64)
+        // Adjust buffer sizes for high bandwidth
+        .datagram_receive_buffer_size(Some(STREAM_WINDOW as usize))
+        .datagram_send_buffer_size(STREAM_WINDOW as usize);
+
+    config
+}
+
 async fn run_s2p_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("Starting S2P proxy server");
 
     // Create Iroh endpoint for server with discovery
     let bytes = hex::decode("fb6b6c4c3af8412f4b9a87fb74977f8b3e34e6fdf752525d318895a5a17efa80")?;
-
     let endpoint = iroh::endpoint::Endpoint::builder()
         .discovery_n0()
         .secret_key(SecretKey::from_bytes(bytes.as_slice().try_into()?))
+        .transport_config(create_300mbps_config())
         .bind_addr_v4(SocketAddrV4::new(Ipv4Addr::new(0, 0 ,0 ,0), 5555))
         .bind()
         .await?;
