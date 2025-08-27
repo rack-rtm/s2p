@@ -7,7 +7,7 @@ use std::io;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::io::copy_bidirectional;
+use tokio::io::{copy_bidirectional, copy_bidirectional_with_sizes};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
@@ -36,7 +36,6 @@ pub struct TcpProxyHandlerHandler {
 }
 
 impl TcpProxyHandlerHandler {
-
     pub fn new() -> Self {
         Self {
             timeouts: TcpProxyTimeouts::default(),
@@ -68,30 +67,42 @@ impl TcpProxyHandlerHandler {
             }
         };
 
-        let mut target_stream =
-            match self.establish_connection_to_target(handshake_request.clone()).await {
-                Ok(stream) => stream,
-                Err(StreamError::IoError(error)) => {
-                    error!("Stream IO error establishing connection: {:?}", error);
-                    return;
+        let mut target_stream = match self
+            .establish_connection_to_target(handshake_request.clone())
+            .await
+        {
+            Ok(stream) => stream,
+            Err(StreamError::IoError(error)) => {
+                error!("Stream IO error establishing connection: {:?}", error);
+                return;
+            }
+            Err(StreamError::ProtocolError(status_code)) => {
+                error!("Protocol error establishing connection: {:?}", status_code);
+                let response = TcpConnectResponse::new(status_code);
+                if let Err(e) = framed_writer.send(response).await {
+                    error!("Failed to send error response: {:?}", e);
                 }
-                Err(StreamError::ProtocolError(status_code)) => {
-                    error!("Protocol error establishing connection: {:?}", status_code);
-                    let response = TcpConnectResponse::new(status_code);
-                    if let Err(e) = framed_writer.send(response).await {
-                        error!("Failed to send error response: {:?}", e);
-                    }
-                    return;
-                }
-            };
+                return;
+            }
+        };
         let _ = framed_writer.send(TcpConnectResponse::success()).await;
 
         let mut iroh_stream =
             IrohStream::new(framed_reader.into_inner(), framed_writer.into_inner());
         info!("Starting bi directional stream copy");
-        match copy_bidirectional(&mut iroh_stream, &mut target_stream).await {
+        match copy_bidirectional_with_sizes(
+            &mut iroh_stream,
+            &mut target_stream,
+            65536usize,
+            65536usize,
+        )
+        .await
+        {
             Ok((r, s)) => {
-                info!("Stream copy completed: {} bytes read, {} bytes written", r, s);
+                info!(
+                    "Stream copy completed: {} bytes read, {} bytes written",
+                    r, s
+                );
             }
             Err(error) => {
                 error!("Stream IO error during copy: {:?}", error);
@@ -105,21 +116,26 @@ impl TcpProxyHandlerHandler {
     ) -> Result<TcpStream, StreamError> {
         let target_address = handshake_request.target;
 
-        let socket_addr = self.resolve_address(&target_address.host, target_address.port).await?;
+        let socket_addr = self
+            .resolve_address(&target_address.host, target_address.port)
+            .await?;
 
-        let tcp_stream = timeout(self.timeouts.connection_timeout, TcpStream::connect(socket_addr))
-            .await
-            .map_err(|_| StreamError::ProtocolError(ConnectStatusCode::TTLExpired))?
-            .map_err(|e| match e.kind() {
-                ErrorKind::ConnectionRefused => {
-                    StreamError::ProtocolError(ConnectStatusCode::ConnectionRefused)
-                }
-                ErrorKind::TimedOut => StreamError::ProtocolError(ConnectStatusCode::TTLExpired),
-                ErrorKind::NotFound | ErrorKind::AddrNotAvailable => {
-                    StreamError::ProtocolError(ConnectStatusCode::HostUnreachable)
-                }
-                _ => StreamError::ProtocolError(ConnectStatusCode::GeneralFailure),
-            })?;
+        let tcp_stream = timeout(
+            self.timeouts.connection_timeout,
+            TcpStream::connect(socket_addr),
+        )
+        .await
+        .map_err(|_| StreamError::ProtocolError(ConnectStatusCode::TTLExpired))?
+        .map_err(|e| match e.kind() {
+            ErrorKind::ConnectionRefused => {
+                StreamError::ProtocolError(ConnectStatusCode::ConnectionRefused)
+            }
+            ErrorKind::TimedOut => StreamError::ProtocolError(ConnectStatusCode::TTLExpired),
+            ErrorKind::NotFound | ErrorKind::AddrNotAvailable => {
+                StreamError::ProtocolError(ConnectStatusCode::HostUnreachable)
+            }
+            _ => StreamError::ProtocolError(ConnectStatusCode::GeneralFailure),
+        })?;
 
         Ok(tcp_stream)
     }
@@ -137,7 +153,12 @@ impl TcpProxyHandlerHandler {
             Host::Domain(domain) => {
                 info!("Resolving domain: {}:{}", domain, port);
                 let addr = format!("{}:{}", domain, port);
-                match timeout(self.timeouts.dns_resolution_timeout, tokio::net::lookup_host(&addr)).await {
+                match timeout(
+                    self.timeouts.dns_resolution_timeout,
+                    tokio::net::lookup_host(&addr),
+                )
+                .await
+                {
                     Ok(Ok(mut addrs)) => match addrs.next() {
                         Some(resolved) => {
                             info!("Domain {} resolved to {}", domain, resolved);
