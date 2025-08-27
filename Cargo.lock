@@ -2895,6 +2895,7 @@ version = "0.0.1"
 dependencies = [
  "bytes",
  "env_logger",
+ "hex",
  "iroh",
  "n0-future 0.2.0",
  "pin-project",

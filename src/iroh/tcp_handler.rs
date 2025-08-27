@@ -89,8 +89,13 @@ impl TcpProxyHandlerHandler {
         let mut iroh_stream =
             IrohStream::new(framed_reader.into_inner(), framed_writer.into_inner());
         info!("Starting bi directional stream copy");
-        if let Err(error) = copy_bidirectional(&mut iroh_stream, &mut target_stream).await {
-            error!("Stream IO error during copy: {:?}", error);
+        match copy_bidirectional(&mut iroh_stream, &mut target_stream).await {
+            Ok((r, s)) => {
+                info!("Stream copy completed: {} bytes read, {} bytes written", r, s);
+            }
+            Err(error) => {
+                error!("Stream IO error during copy: {:?}", error);
+            }
         }
     }
 
