@@ -1,6 +1,8 @@
 use iroh::protocol::Router;
+use iroh::RelayMode::Custom;
+use iroh::{RelayMap, RelayNode, SecretKey};
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::time::Duration;
-use iroh::SecretKey;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tracing::{error, info};
@@ -39,6 +41,7 @@ async fn run_s2p_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     let endpoint = iroh::endpoint::Endpoint::builder()
         .discovery_n0()
         .secret_key(SecretKey::from_bytes(bytes.as_slice().try_into()?))
+        .bind_addr_v4(SocketAddrV4::new(Ipv4Addr::new(0, 0 ,0 ,0), 5555))
         .bind()
         .await?;
 
