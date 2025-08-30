@@ -2,8 +2,9 @@ use crate::iroh::tcp_handler::TcpProxyHandlerHandler;
 use crate::iroh::types::S2pProtocol;
 use crate::iroh::udp_handler::UdpProxyHandlerHandler;
 use iroh::endpoint::Connection;
-use iroh::protocol::{AcceptError, ProtocolHandler};
 use iroh::protocol::AcceptError::NotAllowed;
+use iroh::protocol::{AcceptError, ProtocolHandler};
+use tracing::{error, info};
 
 impl ProtocolHandler for S2pProtocol {
     fn accept(
@@ -14,16 +15,16 @@ impl ProtocolHandler for S2pProtocol {
             let remote_node_id = match connection.remote_node_id() {
                 Ok(id) => id,
                 Err(e) => {
-                    tracing::error!("Failed to get remote node ID: {}", e);
+                    error!("Failed to get remote node ID: {}", e);
                     return Ok(());
                 }
             };
 
             if !self.node_authenticator.should_accept(&remote_node_id).await {
-                tracing::warn!("Connection declined from node: {}", remote_node_id);
+                info!("Connection declined from node: {}", remote_node_id);
                 return Err(NotAllowed {});
             }
-            
+
             let connection_clone = connection.clone();
             let handler_clone = self.clone();
             let socket_factory_clone = self.socket_factory.clone();
