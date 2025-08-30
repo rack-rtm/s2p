@@ -16,7 +16,7 @@ impl ProtocolHandler for S2pProtocol {
                 Ok(id) => id,
                 Err(e) => {
                     error!("Failed to get remote node ID: {}", e);
-                    return Ok(());
+                    return Err(AcceptError::MissingRemoteNodeId { source: e });
                 }
             };
 
@@ -28,7 +28,7 @@ impl ProtocolHandler for S2pProtocol {
             let connection_clone = connection.clone();
             let handler_clone = self.clone();
             let socket_factory_clone = self.socket_factory.clone();
-            
+
             let bi_stream_task = tokio::spawn(async move {
                 while let Ok((writer, reader)) = connection.accept_bi().await {
                     let handler_clone = handler_clone.clone();
@@ -44,9 +44,7 @@ impl ProtocolHandler for S2pProtocol {
             });
 
             let datagram_task = tokio::spawn(async move {
-                let udp_handler = UdpProxyHandlerHandler::with_socket_factory(
-                    socket_factory_clone
-                );
+                let udp_handler = UdpProxyHandlerHandler::with_socket_factory(socket_factory_clone);
                 while let Ok(datagram) = connection_clone.read_datagram().await {
                     udp_handler
                         .handle_datagram(&connection_clone, datagram)
