@@ -4,12 +4,12 @@ use ::iroh::Endpoint;
 use n0_future::{SinkExt, StreamExt};
 use s2p::codec::{TcpConnectRequestCodec, TcpConnectResponseCodec};
 use s2p::iroh::{S2pProtocol, ALPN_S2P_V1};
-use s2p::message_types::{HandshakeRequest, Host, TargetAddress};
+use s2p::message_types::{Host, TargetAddress};
+use s2p::TcpConnectRequest;
 use std::net::Ipv4Addr;
 use std::thread::sleep;
 use std::time::Duration;
 use tokio_util::codec::{FramedRead, FramedWrite};
-use s2p::TcpConnectRequest;
 
 #[tokio::test]
 async fn test_s2p_protocol() {
@@ -25,7 +25,7 @@ async fn test_s2p_protocol() {
     let server_node_id = server_endp.node_id().clone();
 
     let router = Router::builder(server_endp)
-        .accept(ALPN_S2P_V1, S2pProtocol)
+        .accept(ALPN_S2P_V1, S2pProtocol::new())
         .spawn();
 
     sleep(Duration::from_secs(10));

@@ -103,7 +103,7 @@ async fn run_s2p_server(server_id_tx: oneshot::Sender<iroh::NodeId>) -> Result<(
 
     // Use Router to handle the S2P protocol
     let _router = Router::builder(endpoint)
-        .accept(ALPN_S2P_V1, S2pProtocol)
+        .accept(ALPN_S2P_V1, S2pProtocol::new())
         .spawn();
 
     // Keep server running

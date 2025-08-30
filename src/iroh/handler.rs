@@ -11,11 +11,12 @@ impl ProtocolHandler for S2pProtocol {
     ) -> impl Future<Output = Result<(), AcceptError>> + Send {
         Box::pin(async move {
             let connection_clone = connection.clone();
-
+            let handler_clone = self.clone();
             let bi_stream_task = tokio::spawn(async move {
                 while let Ok((writer, reader)) = connection.accept_bi().await {
+                    let handler_clone = handler_clone.clone();
                     tokio::spawn(async move {
-                        TcpProxyHandlerHandler::new()
+                        TcpProxyHandlerHandler::with_timeouts(handler_clone.proxy_timeouts)
                             .handle_stream(writer, reader)
                             .await;
                     });

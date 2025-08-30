@@ -30,11 +30,6 @@ pub enum Host {
     Domain(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HandshakeRequest {
-    pub target: TargetAddress,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ConnectStatusCode {
