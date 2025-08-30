@@ -1,4 +1,6 @@
 use crate::codec::{CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec};
+use crate::iroh::socket_factory::SocketFactory;
+use crate::iroh::types::ProxyTimeouts;
 use crate::iroh_stream::IrohStream;
 use crate::message_types::{ConnectStatusCode, Host, TcpConnectRequest, TcpConnectResponse};
 use iroh::endpoint::{RecvStream, SendStream};
@@ -6,7 +8,7 @@ use n0_future::SinkExt;
 use std::io;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::sync::Arc;
 use tokio::io::copy_bidirectional;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -14,38 +16,19 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, info};
 
-#[derive(Clone)]
-pub struct TcpProxyTimeouts {
-    pub connection_timeout: Duration,
-    pub dns_resolution_timeout: Duration,
-    pub handshake_timeout: Duration,
-}
-
-impl Default for TcpProxyTimeouts {
-    fn default() -> Self {
-        Self {
-            connection_timeout: Duration::from_secs(10),
-            dns_resolution_timeout: Duration::from_secs(5),
-            handshake_timeout: Duration::from_secs(30),
-        }
-    }
-}
-
 pub struct TcpProxyHandlerHandler {
-    timeouts: TcpProxyTimeouts,
+    timeouts: ProxyTimeouts,
+    socket_factory: Arc<dyn SocketFactory>,
 }
 
 impl TcpProxyHandlerHandler {
-
-    pub fn new() -> Self {
-        Self {
-            timeouts: TcpProxyTimeouts::default(),
-        }
+    pub fn with_timeouts_and_socket_factory(
+        timeouts: ProxyTimeouts,
+        socket_factory: Arc<dyn SocketFactory>,
+    ) -> Self {
+        Self { timeouts, socket_factory }
     }
 
-    pub fn with_timeouts(timeouts: TcpProxyTimeouts) -> Self {
-        Self { timeouts }
-    }
     pub async fn handle_stream(&self, writer: SendStream, reader: RecvStream) {
         let mut framed_writer = FramedWrite::new(writer, TcpConnectResponseCodec);
         let mut framed_reader = FramedRead::new(reader, TcpConnectRequestCodec);
@@ -102,7 +85,10 @@ impl TcpProxyHandlerHandler {
 
         let socket_addr = self.resolve_address(&target_address.host, target_address.port).await?;
 
-        let tcp_stream = timeout(self.timeouts.connection_timeout, TcpStream::connect(socket_addr))
+        let tcp_stream = timeout(
+            self.timeouts.tcp_connection_timeout,
+            self.socket_factory.create_tcp_connection(socket_addr)
+        )
             .await
             .map_err(|_| StreamError::ProtocolError(ConnectStatusCode::TTLExpired))?
             .map_err(|e| match e.kind() {
@@ -166,7 +152,7 @@ impl TcpProxyHandlerHandler {
         &self,
         framed_reader: &mut FramedRead<RecvStream, TcpConnectRequestCodec>,
     ) -> Result<TcpConnectRequest, StreamError> {
-        match timeout(self.timeouts.handshake_timeout, framed_reader.next()).await {
+        match timeout(self.timeouts.tcp_proxy_handshake_timeout, framed_reader.next()).await {
             Ok(Some(Ok(handshake_request))) => {
                 info!("Successfully read handshake request");
                 Ok(handshake_request)

@@ -1,5 +1,6 @@
 use crate::codec::{CodecError, UdpDatagramCodec};
-use crate::message_types::{Host, ConnectStatusCode, UdpDatagram};
+use crate::iroh::socket_factory::SocketFactory;
+use crate::message_types::{ConnectStatusCode, Host, UdpDatagram};
 use bytes::{Bytes, BytesMut};
 use iroh::endpoint::Connection;
 use std::collections::HashMap;
@@ -15,12 +16,15 @@ use tracing::{error, info};
 
 pub struct UdpProxyHandlerHandler {
     flows: Arc<Mutex<HashMap<u8, Arc<UdpSocket>>>>,
+    socket_factory: Arc<dyn SocketFactory>,
 }
 
 impl UdpProxyHandlerHandler {
-    pub fn new() -> Self {
+    
+    pub fn with_socket_factory(socket_factory: Arc<dyn SocketFactory>) -> Self {
         Self {
             flows: Arc::new(Mutex::new(HashMap::new())),
+            socket_factory,
         }
     }
 
@@ -46,7 +50,8 @@ impl UdpProxyHandlerHandler {
                 existing_socket.clone()
             } else {
                 let new_socket = Arc::new(
-                    UdpSocket::bind("0.0.0.0:0")
+                    self.socket_factory
+                        .create_udp_socket("0.0.0.0:0")
                         .await
                         .map_err(UdpError::IoError)?,
                 );

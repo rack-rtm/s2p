@@ -2,7 +2,9 @@ use crate::iroh::tcp_handler::TcpProxyHandlerHandler;
 use crate::iroh::types::S2pProtocol;
 use crate::iroh::udp_handler::UdpProxyHandlerHandler;
 use iroh::endpoint::Connection;
+use iroh::protocol::AcceptError::NotAllowed;
 use iroh::protocol::{AcceptError, ProtocolHandler};
+use tracing::{error, info};
 
 impl ProtocolHandler for S2pProtocol {
     fn accept(
@@ -10,20 +12,39 @@ impl ProtocolHandler for S2pProtocol {
         connection: Connection,
     ) -> impl Future<Output = Result<(), AcceptError>> + Send {
         Box::pin(async move {
+            let remote_node_id = match connection.remote_node_id() {
+                Ok(id) => id,
+                Err(e) => {
+                    error!("Failed to get remote node ID: {}", e);
+                    return Err(AcceptError::MissingRemoteNodeId { source: e });
+                }
+            };
+
+            if !self.node_authenticator.should_accept(&remote_node_id).await {
+                info!("Connection declined from node: {}", remote_node_id);
+                return Err(NotAllowed {});
+            }
+
             let connection_clone = connection.clone();
+            let handler_clone = self.clone();
+            let socket_factory_clone = self.socket_factory.clone();
 
             let bi_stream_task = tokio::spawn(async move {
                 while let Ok((writer, reader)) = connection.accept_bi().await {
+                    let handler_clone = handler_clone.clone();
                     tokio::spawn(async move {
-                        TcpProxyHandlerHandler::new()
-                            .handle_stream(writer, reader)
-                            .await;
+                        TcpProxyHandlerHandler::with_timeouts_and_socket_factory(
+                            handler_clone.proxy_timeouts,
+                            handler_clone.socket_factory.clone(),
+                        )
+                        .handle_stream(writer, reader)
+                        .await;
                     });
                 }
             });
 
             let datagram_task = tokio::spawn(async move {
-                let udp_handler = UdpProxyHandlerHandler::new();
+                let udp_handler = UdpProxyHandlerHandler::with_socket_factory(socket_factory_clone);
                 while let Ok(datagram) = connection_clone.read_datagram().await {
                     udp_handler
                         .handle_datagram(&connection_clone, datagram)
