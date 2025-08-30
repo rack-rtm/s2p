@@ -7,12 +7,13 @@ use tokio::sync::oneshot;
 use tracing::{error, info};
 
 use s2p::{S2pProtocol, ALPN_S2P_V1, TcpClient, TargetAddress, Host};
+use s2p::iroh::DynamicNodeAuthenticator;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    // Create a channel to share the server node ID with the client
+    // Create a channel to share the server node ID and authenticator with the client
     let (server_id_tx, server_id_rx) = oneshot::channel();
 
     // Start test target server first
@@ -83,7 +84,7 @@ async fn run_target_server() -> Result<(), Box<dyn std::error::Error + Send + Sy
     Ok(())
 }
 
-async fn run_s2p_server(server_id_tx: oneshot::Sender<iroh::NodeId>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn run_s2p_server(server_id_tx: oneshot::Sender<(iroh::NodeId, DynamicNodeAuthenticator)>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("Starting S2P proxy server");
 
     // Create Iroh endpoint for server with discovery
@@ -96,14 +97,23 @@ async fn run_s2p_server(server_id_tx: oneshot::Sender<iroh::NodeId>) -> Result<(
     info!("S2P proxy server starting...");
     info!("Server Node ID: {}", node_id);
 
-    // Send the node ID to the client
-    if let Err(_) = server_id_tx.send(node_id) {
+    // Example: Create a dynamic node authenticator that allows specific nodes
+    // In this example, we'll start with an empty list and dynamically add nodes
+    let authenticator = DynamicNodeAuthenticator::new(vec![]);
+    
+    // Send the node ID and authenticator to the client
+    if let Err(_) = server_id_tx.send((node_id, authenticator.clone())) {
         error!("Failed to send server node ID to client");
     }
-
-    // Use Router to handle the S2P protocol
+    
+    // Use Router to handle the S2P protocol with node authentication  
+    let protocol = S2pProtocol::builder()
+        .node_authenticator(DynamicNodeAuthenticator::arc(vec![]))
+        .build()
+        .unwrap();
+    
     let _router = Router::builder(endpoint)
-        .accept(ALPN_S2P_V1, S2pProtocol::new())
+        .accept(ALPN_S2P_V1, protocol)
         .spawn();
 
     // Keep server running
@@ -113,7 +123,7 @@ async fn run_s2p_server(server_id_tx: oneshot::Sender<iroh::NodeId>) -> Result<(
     Ok(())
 }
 
-async fn run_client_example(server_id_rx: oneshot::Receiver<iroh::NodeId>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn run_client_example(server_id_rx: oneshot::Receiver<(iroh::NodeId, DynamicNodeAuthenticator)>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("Starting S2P client example");
 
     // Create Iroh endpoint for client with discovery
@@ -124,9 +134,14 @@ async fn run_client_example(server_id_rx: oneshot::Receiver<iroh::NodeId>) -> Re
 
     info!("Client Node ID: {}", client_endpoint.node_id());
 
-    // Wait for the server node ID (this happens when server is ready)
-    let server_node_id = server_id_rx.await.map_err(|_| "Failed to receive server node ID")?;
+    // Wait for the server node ID and authenticator (this happens when server is ready)
+    let (server_node_id, server_authenticator) = server_id_rx.await.map_err(|_| "Failed to receive server info")?;
     info!("Received server node ID: {}", server_node_id);
+    
+    // Add our client node to the server's allowed list
+    let client_node_id = client_endpoint.node_id();
+    info!("Adding client node {} to server's allowed list", client_node_id);
+    server_authenticator.add_node(client_node_id).await;
     
     // Give the server router a moment to be fully ready
     tokio::time::sleep(Duration::from_millis(500)).await;
