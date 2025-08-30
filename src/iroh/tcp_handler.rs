@@ -1,4 +1,5 @@
 use crate::codec::{CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec};
+use crate::iroh::socket_factory::SocketFactory;
 use crate::iroh::types::ProxyTimeouts;
 use crate::iroh_stream::IrohStream;
 use crate::message_types::{ConnectStatusCode, Host, TcpConnectRequest, TcpConnectResponse};
@@ -7,7 +8,7 @@ use n0_future::SinkExt;
 use std::io;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::sync::Arc;
 use tokio::io::copy_bidirectional;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -17,13 +18,17 @@ use tracing::{error, info};
 
 pub struct TcpProxyHandlerHandler {
     timeouts: ProxyTimeouts,
+    socket_factory: Arc<dyn SocketFactory>,
 }
 
 impl TcpProxyHandlerHandler {
-
-    pub fn with_timeouts(timeouts: ProxyTimeouts) -> Self {
-        Self { timeouts }
+    pub fn with_timeouts_and_socket_factory(
+        timeouts: ProxyTimeouts,
+        socket_factory: Arc<dyn SocketFactory>,
+    ) -> Self {
+        Self { timeouts, socket_factory }
     }
+
     pub async fn handle_stream(&self, writer: SendStream, reader: RecvStream) {
         let mut framed_writer = FramedWrite::new(writer, TcpConnectResponseCodec);
         let mut framed_reader = FramedRead::new(reader, TcpConnectRequestCodec);
@@ -80,7 +85,10 @@ impl TcpProxyHandlerHandler {
 
         let socket_addr = self.resolve_address(&target_address.host, target_address.port).await?;
 
-        let tcp_stream = timeout(self.timeouts.tcp_connection_timeout, TcpStream::connect(socket_addr))
+        let tcp_stream = timeout(
+            self.timeouts.tcp_connection_timeout,
+            self.socket_factory.create_tcp_connection(socket_addr)
+        )
             .await
             .map_err(|_| StreamError::ProtocolError(ConnectStatusCode::TTLExpired))?
             .map_err(|e| match e.kind() {
