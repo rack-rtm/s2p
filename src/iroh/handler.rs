@@ -18,7 +18,7 @@ impl ProtocolHandler for S2pProtocol {
                     return Ok(());
                 }
             };
-            
+
             if !self.node_authenticator.should_accept(&remote_node_id).await {
                 tracing::warn!("Connection declined from node: {}", remote_node_id);
                 return Err(NotAllowed {});

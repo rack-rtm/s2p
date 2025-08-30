@@ -2963,7 +2963,7 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "s2p"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "bytes",
  "derive_builder",
@@ -3498,7 +3498,6 @@ dependencies = [
  "io-uring",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "slab",
