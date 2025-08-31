@@ -190,7 +190,7 @@ impl UdpProxyHandlerHandler {
             Host::Domain(domain) => {
                 info!("Resolving domain: {}:{}", domain, port);
                 let addr = format!("{}:{}", domain, port);
-                match timeout(Duration::from_secs(5), tokio::net::lookup_host(&addr)).await {
+                match timeout(Duration::from_secs(5), tokio::net::lookup_host(addr)).await {
                     Ok(Ok(mut addrs)) => match addrs.next() {
                         Some(resolved) => {
                             info!("Domain {} resolved to {}", domain, resolved);
