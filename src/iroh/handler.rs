@@ -1,3 +1,4 @@
+use std::future::Future;
 use crate::iroh::tcp_handler::TcpProxyHandlerHandler;
 use crate::iroh::types::S2pProtocol;
 use crate::iroh::udp_handler::UdpProxyHandlerHandler;

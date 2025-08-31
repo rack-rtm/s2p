@@ -118,7 +118,7 @@ impl TcpProxyHandlerHandler {
             Host::Domain(domain) => {
                 info!("Resolving domain: {}:{}", domain, port);
                 let addr = format!("{}:{}", domain, port);
-                match timeout(self.timeouts.dns_resolution_timeout, tokio::net::lookup_host(&addr)).await {
+                match timeout(self.timeouts.dns_resolution_timeout, tokio::net::lookup_host(addr)).await {
                     Ok(Ok(mut addrs)) => match addrs.next() {
                         Some(resolved) => {
                             info!("Domain {} resolved to {}", domain, resolved);
