@@ -1,4 +1,5 @@
 use crate::codec::{CodecError, UdpDatagramCodec};
+use crate::iroh::dns_resolver::DnsResolver;
 use crate::iroh::socket_factory::SocketFactory;
 use crate::message_types::{ConnectStatusCode, Host, UdpDatagram};
 use bytes::{Bytes, BytesMut};
@@ -17,14 +18,18 @@ use tracing::{error, info};
 pub struct UdpProxyHandlerHandler {
     flows: Arc<Mutex<HashMap<u8, Arc<UdpSocket>>>>,
     socket_factory: Arc<dyn SocketFactory>,
+    dns_resolver: Arc<dyn DnsResolver>,
 }
 
 impl UdpProxyHandlerHandler {
-    
-    pub fn with_socket_factory(socket_factory: Arc<dyn SocketFactory>) -> Self {
+    pub fn with_socket_factory(
+        socket_factory: Arc<dyn SocketFactory>,
+        dns_resolver: Arc<dyn DnsResolver>,
+    ) -> Self {
         Self {
             flows: Arc::new(Mutex::new(HashMap::new())),
             socket_factory,
+            dns_resolver,
         }
     }
 
@@ -77,7 +82,9 @@ impl UdpProxyHandlerHandler {
         };
 
         let target_address = &udp_datagram.target;
-        let socket_addr = Self::resolve_address(&target_address.host, target_address.port).await?;
+        let socket_addr = self
+            .resolve_address(&target_address.host, target_address.port)
+            .await?;
 
         socket
             .send_to(&udp_datagram.data, socket_addr)
@@ -177,7 +184,7 @@ impl UdpProxyHandlerHandler {
         Ok(buf.freeze())
     }
 
-    async fn resolve_address(address: &Host, port: u16) -> Result<SocketAddr, UdpError> {
+    async fn resolve_address(&self, address: &Host, port: u16) -> Result<SocketAddr, UdpError> {
         match address {
             Host::IPv4(ip) => {
                 info!("Using IPv4 address: {}:{}", ip, port);
@@ -189,18 +196,23 @@ impl UdpProxyHandlerHandler {
             }
             Host::Domain(domain) => {
                 info!("Resolving domain: {}:{}", domain, port);
-                let addr = format!("{}:{}", domain, port);
-                match timeout(Duration::from_secs(5), tokio::net::lookup_host(addr)).await {
-                    Ok(Ok(mut addrs)) => match addrs.next() {
-                        Some(resolved) => {
+                let host_with_port = format!("{}:{}", domain, port);
+                match timeout(
+                    Duration::from_secs(5),
+                    self.dns_resolver.lookup_host(&host_with_port),
+                )
+                .await
+                {
+                    Ok(Ok(addrs)) => {
+                        if let Some(ip) = addrs.first() {
+                            let resolved = SocketAddr::from((*ip, port));
                             info!("Domain {} resolved to {}", domain, resolved);
                             Ok(resolved)
-                        }
-                        None => {
+                        } else {
                             error!("DNS resolution for {} returned no results", domain);
                             Err(UdpError::ProtocolError(ConnectStatusCode::HostUnreachable))
                         }
-                    },
+                    }
                     Ok(Err(e)) => {
                         error!("DNS resolution failed for {}: {}", domain, e);
                         Err(UdpError::ProtocolError(ConnectStatusCode::HostUnreachable))

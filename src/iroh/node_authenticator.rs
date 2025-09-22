@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use iroh::NodeId;
 use std::future::Future;
 use std::pin::Pin;
-use iroh::NodeId;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub trait NodeAuthenticator: Send + Sync + std::fmt::Debug {
@@ -15,7 +15,7 @@ impl AllowAllNodeAuthenticator {
     pub fn new() -> Self {
         Self
     }
-    
+
     pub fn arc() -> Arc<dyn NodeAuthenticator> {
         Arc::new(Self::new())
     }
@@ -44,28 +44,28 @@ impl DynamicNodeAuthenticator {
             allowed_nodes: Arc::new(RwLock::new(allowed_nodes)),
         }
     }
-    
+
     pub fn arc(allowed_nodes: Vec<NodeId>) -> Arc<dyn NodeAuthenticator> {
         Arc::new(Self::new(allowed_nodes))
     }
-    
+
     pub async fn add_node(&self, node_id: NodeId) {
         let mut nodes = self.allowed_nodes.write().await;
         if !nodes.contains(&node_id) {
             nodes.push(node_id);
         }
     }
-    
+
     pub async fn remove_node(&self, node_id: &NodeId) {
         let mut nodes = self.allowed_nodes.write().await;
         nodes.retain(|id| id != node_id);
     }
-    
+
     pub async fn set_allowed_nodes(&self, allowed_nodes: Vec<NodeId>) {
         let mut nodes = self.allowed_nodes.write().await;
         *nodes = allowed_nodes;
     }
-    
+
     pub async fn get_allowed_nodes(&self) -> Vec<NodeId> {
         self.allowed_nodes.read().await.clone()
     }

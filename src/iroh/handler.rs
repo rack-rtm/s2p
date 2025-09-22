@@ -1,10 +1,10 @@
-use std::future::Future;
 use crate::iroh::tcp_handler::TcpProxyHandlerHandler;
 use crate::iroh::types::S2pProtocol;
 use crate::iroh::udp_handler::UdpProxyHandlerHandler;
 use iroh::endpoint::Connection;
 use iroh::protocol::AcceptError::NotAllowed;
 use iroh::protocol::{AcceptError, ProtocolHandler};
+use std::future::Future;
 use tracing::{error, info};
 
 impl ProtocolHandler for S2pProtocol {
@@ -29,6 +29,7 @@ impl ProtocolHandler for S2pProtocol {
             let connection_clone = connection.clone();
             let handler_clone = self.clone();
             let socket_factory_clone = self.socket_factory.clone();
+            let dns_resolver_clone = self.dns_resolver.clone();
 
             let bi_stream_task = tokio::spawn(async move {
                 while let Ok((writer, reader)) = connection.accept_bi().await {
@@ -37,6 +38,7 @@ impl ProtocolHandler for S2pProtocol {
                         TcpProxyHandlerHandler::with_timeouts_and_socket_factory(
                             handler_clone.proxy_timeouts,
                             handler_clone.socket_factory.clone(),
+                            handler_clone.dns_resolver.clone(),
                         )
                         .handle_stream(writer, reader)
                         .await;
@@ -45,7 +47,10 @@ impl ProtocolHandler for S2pProtocol {
             });
 
             let datagram_task = tokio::spawn(async move {
-                let udp_handler = UdpProxyHandlerHandler::with_socket_factory(socket_factory_clone);
+                let udp_handler = UdpProxyHandlerHandler::with_socket_factory(
+                    socket_factory_clone,
+                    dns_resolver_clone,
+                );
                 while let Ok(datagram) = connection_clone.read_datagram().await {
                     udp_handler
                         .handle_datagram(&connection_clone, datagram)

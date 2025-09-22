@@ -1,4 +1,5 @@
 use crate::codec::{CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec};
+use crate::iroh::dns_resolver::DnsResolver;
 use crate::iroh::socket_factory::SocketFactory;
 use crate::iroh::types::ProxyTimeouts;
 use crate::iroh_stream::IrohStream;
@@ -19,14 +20,20 @@ use tracing::{error, info};
 pub struct TcpProxyHandlerHandler {
     timeouts: ProxyTimeouts,
     socket_factory: Arc<dyn SocketFactory>,
+    dns_resolver: Arc<dyn DnsResolver>,
 }
 
 impl TcpProxyHandlerHandler {
     pub fn with_timeouts_and_socket_factory(
         timeouts: ProxyTimeouts,
         socket_factory: Arc<dyn SocketFactory>,
+        dns_resolver: Arc<dyn DnsResolver>,
     ) -> Self {
-        Self { timeouts, socket_factory }
+        Self {
+            timeouts,
+            socket_factory,
+            dns_resolver,
+        }
     }
 
     pub async fn handle_stream(&self, writer: SendStream, reader: RecvStream) {
@@ -51,22 +58,24 @@ impl TcpProxyHandlerHandler {
             }
         };
 
-        let mut target_stream =
-            match self.establish_connection_to_target(handshake_request.clone()).await {
-                Ok(stream) => stream,
-                Err(StreamError::IoError(error)) => {
-                    error!("Stream IO error establishing connection: {:?}", error);
-                    return;
+        let mut target_stream = match self
+            .establish_connection_to_target(handshake_request.clone())
+            .await
+        {
+            Ok(stream) => stream,
+            Err(StreamError::IoError(error)) => {
+                error!("Stream IO error establishing connection: {:?}", error);
+                return;
+            }
+            Err(StreamError::ProtocolError(status_code)) => {
+                error!("Protocol error establishing connection: {:?}", status_code);
+                let response = TcpConnectResponse::new(status_code);
+                if let Err(e) = framed_writer.send(response).await {
+                    error!("Failed to send error response: {:?}", e);
                 }
-                Err(StreamError::ProtocolError(status_code)) => {
-                    error!("Protocol error establishing connection: {:?}", status_code);
-                    let response = TcpConnectResponse::new(status_code);
-                    if let Err(e) = framed_writer.send(response).await {
-                        error!("Failed to send error response: {:?}", e);
-                    }
-                    return;
-                }
-            };
+                return;
+            }
+        };
         let _ = framed_writer.send(TcpConnectResponse::success()).await;
 
         let mut iroh_stream =
@@ -83,27 +92,29 @@ impl TcpProxyHandlerHandler {
     ) -> Result<TcpStream, StreamError> {
         let target_address = handshake_request.target;
 
-        let socket_addr = self.resolve_address(&target_address.host, target_address.port).await?;
+        let socket_addr = self
+            .resolve_address(&target_address.host, target_address.port)
+            .await?;
 
         let tcp_stream = timeout(
             self.timeouts.tcp_connection_timeout,
-            self.socket_factory.create_tcp_connection(socket_addr)
+            self.socket_factory.create_tcp_connection(socket_addr),
         )
-            .await
-            .map_err(|_| StreamError::ProtocolError(ConnectStatusCode::TTLExpired))?
-            .map_err(|e| match e.kind() {
-                ErrorKind::ConnectionRefused => {
-                    StreamError::ProtocolError(ConnectStatusCode::ConnectionRefused)
-                }
-                ErrorKind::TimedOut => StreamError::ProtocolError(ConnectStatusCode::TTLExpired),
-                ErrorKind::NotFound | ErrorKind::AddrNotAvailable => {
-                    StreamError::ProtocolError(ConnectStatusCode::HostUnreachable)
-                }
-                _ => { 
-                    error!("Unexpected error during connection establishment: {:?}", e);
-                    StreamError::ProtocolError(ConnectStatusCode::GeneralFailure) 
-                },
-            })?;
+        .await
+        .map_err(|_| StreamError::ProtocolError(ConnectStatusCode::TTLExpired))?
+        .map_err(|e| match e.kind() {
+            ErrorKind::ConnectionRefused => {
+                StreamError::ProtocolError(ConnectStatusCode::ConnectionRefused)
+            }
+            ErrorKind::TimedOut => StreamError::ProtocolError(ConnectStatusCode::TTLExpired),
+            ErrorKind::NotFound | ErrorKind::AddrNotAvailable => {
+                StreamError::ProtocolError(ConnectStatusCode::HostUnreachable)
+            }
+            _ => {
+                error!("Unexpected error during connection establishment: {:?}", e);
+                StreamError::ProtocolError(ConnectStatusCode::GeneralFailure)
+            }
+        })?;
 
         Ok(tcp_stream)
     }
@@ -120,20 +131,25 @@ impl TcpProxyHandlerHandler {
             }
             Host::Domain(domain) => {
                 info!("Resolving domain: {}:{}", domain, port);
-                let addr = format!("{}:{}", domain, port);
-                match timeout(self.timeouts.dns_resolution_timeout, tokio::net::lookup_host(addr)).await {
-                    Ok(Ok(mut addrs)) => match addrs.next() {
-                        Some(resolved) => {
+                let host_with_port = format!("{}:{}", domain, port);
+                match timeout(
+                    self.timeouts.dns_resolution_timeout,
+                    self.dns_resolver.lookup_host(&host_with_port),
+                )
+                .await
+                {
+                    Ok(Ok(addrs)) => {
+                        if let Some(ip) = addrs.first() {
+                            let resolved = SocketAddr::from((*ip, port));
                             info!("Domain {} resolved to {}", domain, resolved);
                             Ok(resolved)
-                        }
-                        None => {
+                        } else {
                             error!("DNS resolution for {} returned no results", domain);
                             Err(StreamError::ProtocolError(
                                 ConnectStatusCode::HostUnreachable,
                             ))
                         }
-                    },
+                    }
                     Ok(Err(e)) => {
                         error!("DNS resolution failed for {}: {}", domain, e);
                         Err(StreamError::ProtocolError(
@@ -155,7 +171,12 @@ impl TcpProxyHandlerHandler {
         &self,
         framed_reader: &mut FramedRead<RecvStream, TcpConnectRequestCodec>,
     ) -> Result<TcpConnectRequest, StreamError> {
-        match timeout(self.timeouts.tcp_proxy_handshake_timeout, framed_reader.next()).await {
+        match timeout(
+            self.timeouts.tcp_proxy_handshake_timeout,
+            framed_reader.next(),
+        )
+        .await
+        {
             Ok(Some(Ok(handshake_request))) => {
                 info!("Successfully read handshake request");
                 Ok(handshake_request)

@@ -61,10 +61,17 @@ impl TcpClient {
 
         let connect_request = TcpConnectRequest { target };
 
-        timeout(self.timeouts.request_timeout, framed_writer.send(connect_request))
-            .await
-            .map_err(|_| TcpClientError::IoError(io::Error::new(io::ErrorKind::TimedOut, "request timeout")))?
-            .map_err(|e| TcpClientError::IoError(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
+        timeout(
+            self.timeouts.request_timeout,
+            framed_writer.send(connect_request),
+        )
+        .await
+        .map_err(|_| {
+            TcpClientError::IoError(io::Error::new(io::ErrorKind::TimedOut, "request timeout"))
+        })?
+        .map_err(|e| {
+            TcpClientError::IoError(io::Error::new(io::ErrorKind::Other, e.to_string()))
+        })?;
 
         let response = self.read_connect_response(&mut framed_reader).await?;
 

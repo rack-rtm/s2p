@@ -1,10 +1,7 @@
 use crate::codec::types::{
     CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec, UdpDatagramCodec,
 };
-use crate::message_types::{
-    Host, TcpConnectRequest, TcpConnectResponse,
-    UdpDatagram,
-};
+use crate::message_types::{Host, TcpConnectRequest, TcpConnectResponse, UdpDatagram};
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::Encoder;
 impl Encoder<UdpDatagram> for UdpDatagramCodec {

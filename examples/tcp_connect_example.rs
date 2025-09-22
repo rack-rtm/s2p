@@ -6,7 +6,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tracing::{error, info};
 
-use s2p::{ALPN_S2P_V1, Host, S2pProtocol, TargetAddress, TcpClient};
+use s2p::{Host, S2pProtocol, TargetAddress, TcpClient, ALPN_S2P_V1};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

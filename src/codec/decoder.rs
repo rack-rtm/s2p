@@ -1,4 +1,3 @@
-use crate::TcpConnectRequest;
 use crate::codec::types::CodecError::InvalidStatusCode;
 use crate::codec::types::{
     CodecError, TcpConnectRequestCodec, TcpConnectResponseCodec, UdpDatagramCodec,
@@ -6,6 +5,7 @@ use crate::codec::types::{
 use crate::message_types::{
     ConnectStatusCode, Host, TargetAddress, TcpConnectResponse, UdpDatagram,
 };
+use crate::TcpConnectRequest;
 use bytes::{Buf, BytesMut};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use tokio_util::codec::Decoder;

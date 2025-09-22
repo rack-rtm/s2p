@@ -1,8 +1,9 @@
+use super::dns_resolver::DnsResolver;
+use super::node_authenticator::NodeAuthenticator;
+use super::socket_factory::SocketFactory;
+use derive_builder::Builder;
 use std::sync::Arc;
 use std::time::Duration;
-use derive_builder::Builder;
-use super::socket_factory::SocketFactory;
-use super::node_authenticator::NodeAuthenticator;
 
 #[derive(Debug, Clone, Builder)]
 #[builder(setter(into))]
@@ -13,6 +14,8 @@ pub struct S2pProtocol {
     pub socket_factory: Arc<dyn SocketFactory>,
     #[builder(default = "super::node_authenticator::AllowAllNodeAuthenticator::arc()")]
     pub node_authenticator: Arc<dyn NodeAuthenticator>,
+    #[builder(default = "super::dns_resolver::DefaultDnsResolver::arc()")]
+    pub dns_resolver: Arc<dyn DnsResolver>,
 }
 
 #[derive(Debug, Clone, Builder)]
@@ -30,15 +33,18 @@ impl S2pProtocol {
     pub fn new() -> Self {
         Self::builder().build().unwrap()
     }
-    
+
     pub fn builder() -> S2pProtocolBuilder {
         S2pProtocolBuilder::default()
     }
 
     pub fn with_timeouts(proxy_timeouts: ProxyTimeouts) -> Self {
-        Self::builder().proxy_timeouts(proxy_timeouts).build().unwrap()
+        Self::builder()
+            .proxy_timeouts(proxy_timeouts)
+            .build()
+            .unwrap()
     }
-    
+
     pub fn with_socket_factory(
         proxy_timeouts: ProxyTimeouts,
         socket_factory: Arc<dyn SocketFactory>,
@@ -49,7 +55,7 @@ impl S2pProtocol {
             .build()
             .unwrap()
     }
-    
+
     pub fn with_node_authenticator(
         proxy_timeouts: ProxyTimeouts,
         node_authenticator: Arc<dyn NodeAuthenticator>,
@@ -60,7 +66,7 @@ impl S2pProtocol {
             .build()
             .unwrap()
     }
-    
+
     pub fn with_socket_factory_and_node_authenticator(
         proxy_timeouts: ProxyTimeouts,
         socket_factory: Arc<dyn SocketFactory>,
