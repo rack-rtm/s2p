@@ -99,7 +99,10 @@ impl TcpProxyHandlerHandler {
                 ErrorKind::NotFound | ErrorKind::AddrNotAvailable => {
                     StreamError::ProtocolError(ConnectStatusCode::HostUnreachable)
                 }
-                _ => StreamError::ProtocolError(ConnectStatusCode::GeneralFailure),
+                _ => { 
+                    error!("Unexpected error during connection establishment: {:?}", e);
+                    StreamError::ProtocolError(ConnectStatusCode::GeneralFailure) 
+                },
             })?;
 
         Ok(tcp_stream)
